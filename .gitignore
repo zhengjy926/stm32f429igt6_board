@@ -53,3 +53,15 @@ dkms.conf
 
 # debug information files
 *.dwo
+
+# ---- Keil uVision 构建产物 / 用户私有文件 ----
+# 只跟踪工程文件 .uvprojx；下面这些每次构建或每台机器都会变，全部忽略。
+# 注意不要整目录忽略 mdk-arm/，否则 .uvprojx 也进不了仓库。
+mdk-arm/Objects/
+mdk-arm/Listings/
+mdk-arm/DebugConfig/
+mdk-arm/RTE/
+mdk-arm/*.uvoptx
+mdk-arm/*.uvguix.*
+mdk-arm/JLinkLog.txt
+mdk-arm/JLinkSettings.ini
