@@ -2,23 +2,45 @@
   ******************************************************************************
   * @file      : gpio_stm32.c
   * @author    : ZJY
-  * @version   : V1.0
-  * @date      : 2026-11-20
+  * @version   : V1.1
+  * @date      : 2026-11-23
   * @brief     : STM32F4 GPIO 驱动，基于 LL 库
   * @attention : 1. EXTI 源映射依赖 SYSCFG 时钟，board_init() 里已使能；
   *              2. 驱动只负责 EXTI 线上的源映射/触发/使能，对应 IRQn 的
   *                 NVIC 使能、优先级和中断服务程序由板级代码负责；
   *              3. 输出速度固定为低速，需要高频翻转的引脚请在外设驱动里
   *                 自行改写 OSPEEDR；
-  *              4. STM32F4 的 EXTI 只有边沿触发，电平触发返回 -ENOTSUP。
+  *              4. STM32F4 的 EXTI 只有边沿触发，电平触发返回 -ENOTSUP；
+  *              5. 端口宽度（16 脚）由 GPIO_STM32_PINS_PER_PORT 给出，放在
+  *                 config 的 pin_count 里，越界和掩码高位检查都用它，
+  *                 不依赖 gpio.h 里的任何固定宽度。
+  ******************************************************************************
+  * @history   :
+  *       V1.0 : 初版
+  *       V1.1 : 1. 端口实际引脚数下沉到 config->pin_count，替换 gpio.h 里写死的
+  *                GPIO_PINS_PER_PORT
+  *              2. port_xxx 补上掩码高位校验（原注释承诺 -EINVAL，实际没查）
+  *              3. 掩码裁剪改用 gpio_pins_mask()，不再写 0xFFFF
   ******************************************************************************
   */
+#include <stdbool.h>
+
 #include "gpio.h"
+#include "gpio_stm32.h"
 
 #include "stm32f4xx_ll_bus.h"
 #include "stm32f4xx_ll_exti.h"
 #include "stm32f4xx_ll_gpio.h"
 #include "stm32f4xx_ll_system.h"
+
+/* 掩码是 32 位（至少）时才允许把 gpio_mask_t 直接交给 LL 的 uint32_t 参数 */
+#if GPIO_STM32_PINS_PER_PORT > 32U
+#error "STM32 GPIO port wider than 32 pins is not supported"
+#endif
+
+#if GPIO_STM32_PINS_PER_PORT > GPIO_PORT_MAX_PINS
+#error "GPIO_PORT_MAX_PINS too small for the STM32 port width"
+#endif
 
 /* Private types ------------------------------------------------------------*/
 
@@ -27,9 +49,19 @@ struct gpio_stm32_config {
     GPIO_TypeDef *port;   /**< GPIOA ~ GPIOK */
     uint32_t clock;       /**< LL_AHB1_GRP1_PERIPH_GPIOx */
     uint32_t exti_port;   /**< LL_SYSCFG_EXTI_PORTx，EXTI 源映射用 */
+    uint8_t pin_count;    /**< 端口实际引脚数，判断越界/裁剪掩码用 */
 };
 
 /* Private helpers ----------------------------------------------------------*/
+
+/**
+ * @brief  mask 是否含超出端口引脚数的位
+ */
+static bool gpio_stm32_mask_invalid(const struct gpio_stm32_config *cfg,
+                                    gpio_mask_t mask)
+{
+    return (mask & (gpio_mask_t)~gpio_pins_mask(cfg->pin_count)) != 0U;
+}
 
 /**
  * @brief  引脚号转单引脚掩码
@@ -62,7 +94,7 @@ static int gpio_stm32_pin_configure(const struct device *dev, gpio_pin_t pin,
     uint32_t mode;
     uint32_t pull;
 
-    if (pin >= GPIO_PINS_PER_PORT) {
+    if (pin >= cfg->pin_count) {
         return -EINVAL;
     }
     if ((flags & ~GPIO_FLAGS_VALID) != 0U) {
@@ -114,7 +146,7 @@ static int gpio_stm32_pin_set(const struct device *dev, gpio_pin_t pin, uint32_t
     const struct gpio_stm32_config *cfg = (const struct gpio_stm32_config *)dev->config;
     uint32_t mask;
 
-    if (pin >= GPIO_PINS_PER_PORT) {
+    if (pin >= cfg->pin_count) {
         return -EINVAL;
     }
 
@@ -134,7 +166,7 @@ static int gpio_stm32_pin_get(const struct device *dev, gpio_pin_t pin, uint32_t
     const struct gpio_stm32_config *cfg = (const struct gpio_stm32_config *)dev->config;
     uint32_t mask;
 
-    if (pin >= GPIO_PINS_PER_PORT) {
+    if (pin >= cfg->pin_count) {
         return -EINVAL;
     }
 
@@ -148,7 +180,7 @@ static int gpio_stm32_pin_toggle(const struct device *dev, gpio_pin_t pin)
 {
     const struct gpio_stm32_config *cfg = (const struct gpio_stm32_config *)dev->config;
 
-    if (pin >= GPIO_PINS_PER_PORT) {
+    if (pin >= cfg->pin_count) {
         return -EINVAL;
     }
 
@@ -163,7 +195,7 @@ static int gpio_stm32_pin_interrupt_configure(const struct device *dev, gpio_pin
     const struct gpio_stm32_config *cfg = (const struct gpio_stm32_config *)dev->config;
     uint32_t line;
 
-    if (pin >= GPIO_PINS_PER_PORT) {
+    if (pin >= cfg->pin_count) {
         return -EINVAL;
     }
 
@@ -209,9 +241,9 @@ static int gpio_stm32_pin_interrupt_configure(const struct device *dev, gpio_pin
 
 static int gpio_stm32_pin_irq_ack(const struct device *dev, gpio_pin_t pin)
 {
-    (void)dev;
+    const struct gpio_stm32_config *cfg = (const struct gpio_stm32_config *)dev->config;
 
-    if (pin >= GPIO_PINS_PER_PORT) {
+    if (pin >= cfg->pin_count) {
         return -EINVAL;
     }
 
@@ -224,7 +256,8 @@ static int gpio_stm32_port_get(const struct device *dev, gpio_mask_t *value)
 {
     const struct gpio_stm32_config *cfg = (const struct gpio_stm32_config *)dev->config;
 
-    *value = (gpio_mask_t)(LL_GPIO_ReadInputPort(cfg->port) & 0xFFFFU);
+    *value = (gpio_mask_t)(LL_GPIO_ReadInputPort(cfg->port) &
+                           (uint32_t)gpio_pins_mask(cfg->pin_count));
 
     return 0;
 }
@@ -232,6 +265,10 @@ static int gpio_stm32_port_get(const struct device *dev, gpio_mask_t *value)
 static int gpio_stm32_port_set_bits(const struct device *dev, gpio_mask_t mask)
 {
     const struct gpio_stm32_config *cfg = (const struct gpio_stm32_config *)dev->config;
+
+    if (gpio_stm32_mask_invalid(cfg, mask)) {
+        return -EINVAL;
+    }
 
     LL_GPIO_SetOutputPin(cfg->port, (uint32_t)mask);
 
@@ -242,6 +279,10 @@ static int gpio_stm32_port_clear_bits(const struct device *dev, gpio_mask_t mask
 {
     const struct gpio_stm32_config *cfg = (const struct gpio_stm32_config *)dev->config;
 
+    if (gpio_stm32_mask_invalid(cfg, mask)) {
+        return -EINVAL;
+    }
+
     LL_GPIO_ResetOutputPin(cfg->port, (uint32_t)mask);
 
     return 0;
@@ -250,6 +291,10 @@ static int gpio_stm32_port_clear_bits(const struct device *dev, gpio_mask_t mask
 static int gpio_stm32_port_toggle_bits(const struct device *dev, gpio_mask_t mask)
 {
     const struct gpio_stm32_config *cfg = (const struct gpio_stm32_config *)dev->config;
+
+    if (gpio_stm32_mask_invalid(cfg, mask)) {
+        return -EINVAL;
+    }
 
     LL_GPIO_TogglePin(cfg->port, (uint32_t)mask);
 
@@ -266,13 +311,13 @@ static int gpio_stm32_port_irq_status(const struct device *dev, gpio_mask_t *pen
      * EXTI 线 n 全局只有一条，当前映射到哪个端口要看 SYSCFG->EXTICR。
      * 只报告映射到本端口的线，否则 gpioa/gpiob 会同时报同一批挂起位。
      */
-    for (pin = 0U; pin < (uint32_t)GPIO_PINS_PER_PORT; pin++) {
+    for (pin = 0U; pin < (uint32_t)cfg->pin_count; pin++) {
         if (LL_SYSCFG_GetEXTISource(gpio_stm32_exti_line((gpio_pin_t)pin)) == cfg->exti_port) {
             owned |= (uint32_t)1U << pin;
         }
     }
 
-    *pending = (gpio_mask_t)(LL_EXTI_ReadFlag_0_31(0x0000FFFFU) & owned);
+    *pending = (gpio_mask_t)(LL_EXTI_ReadFlag_0_31(owned) & owned);
 
     return 0;
 }
@@ -308,6 +353,7 @@ static const struct gpio_driver_api gpio_stm32_api = {
         .port = (port_),                                        \
         .clock = (clock_),                                      \
         .exti_port = (exti_port_),                              \
+        .pin_count = GPIO_STM32_PINS_PER_PORT,                  \
     };                                                          \
     DEVICE_DEFINE(id, name, &id##_cfg, &gpio_stm32_api, NULL,   \
                   gpio_stm32_init, NULL)
