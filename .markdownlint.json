@@ -1,0 +1,41 @@
+{
+    "default": true,
+
+    "MD013": false,
+
+    "MD033": {
+      "allowed_elements": [
+        "a",
+        "img",
+        "p",
+        "div",
+        "span",
+        "details",
+        "summary",
+        "kbd",
+        "br",
+        "sub",
+        "sup"
+      ]
+    },
+
+    "MD024": {
+      "siblings_only": true
+    },
+
+    "MD025": false,
+
+    "MD029": {
+      "style": "ordered"
+    },
+
+    "MD036": false,
+
+    "MD040": true,
+
+    "MD041": false,
+
+    "MD060": {
+      "style": "compact"
+    }
+  }

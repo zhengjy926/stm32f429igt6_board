@@ -1,0 +1,67 @@
+# =============================================================================
+# clang-format 项目级格式化配置
+# 供 clangd / C/C++ 扩展在格式化 .c / .h 时自动读取
+# 修改后无需重启 IDE，保存文件后再次格式化即可生效
+# =============================================================================
+
+# 基础风格：以 LLVM 预设为起点，再覆盖下方细项
+BasedOnStyle: LLVM
+Language: C
+
+# ---------------------------------------------------------------------------
+# 缩进与换行
+# ---------------------------------------------------------------------------
+IndentWidth: 4                              # 每级缩进 4 个空格
+TabWidth: 4                                 # Tab 显示宽度为 4
+UseTab: Never                               # 禁止使用 Tab，统一空格缩进
+ColumnLimit: 80                             # 单行最大列宽
+BreakBeforeBraces: Linux                    # Linux/K&R 风格花括号
+AllowShortIfStatementsOnASingleLine: false  # 禁止 if 与语句写在同一行
+AllowShortFunctionsOnASingleLine: None      # 强制所有函数（包括空函数）换行
+IndentCaseLabels: false                     # case 标签与 switch 同级缩进不额外缩进
+ReflowComments: false                       # 禁止重排注释，保留手工对齐
+
+# ---------------------------------------------------------------------------
+# 空行与空格控制
+# ---------------------------------------------------------------------------
+MaxEmptyLinesToKeep: 1                      # 最多保留 1 行连续空行
+KeepEmptyLinesAtTheStartOfBlocks: false     # 清除代码块 { 后的起始空行
+SpaceBeforeParens: ControlStatements        # 仅控制语句 (if/for/while) 加空格
+
+# ---------------------------------------------------------------------------
+# 指针与表格化对齐
+# ---------------------------------------------------------------------------
+PointerAlignment: Right                     # 指针星号靠右侧 (int *ptr)
+AlignConsecutiveAssignments: true           # 连续的赋值等号对齐
+AlignConsecutiveDeclarations: true          # 连续的变量声明对齐
+
+# 针对宏定义的高阶连续对齐配置 (支持 Clang-Format 12+)
+AlignConsecutiveMacros:
+  Enabled: true
+  AcrossEmptyLines: false                   # 遇到空行时，打断对齐并重新计算宽度
+  AcrossComments: true                      # 遇到注释时，继续保持首尾对齐
+
+# ---------------------------------------------------------------------------
+# 头文件排序与分组
+# ---------------------------------------------------------------------------
+SortIncludes: CaseSensitive                 # 开启按字母排序
+IncludeBlocks: Regroup                      # 不同 Priority 组别之间自动插入空行隔离
+IncludeIsMainRegex: '(Test)?$'              # 自动识别对应的 .h 文件并强制置顶 (Priority: 0)
+
+# 头文件包含顺序优先级分类（数字越小排越前）
+IncludeCategories:
+  # 1. 标准 C 系统库 (形如 <stdio.h>)
+  - Regex:           '^<[a-zA-Z0-9_]+\.h>$'
+    Priority:        1
+  # 2. 系统级或 POSIX 扩展库 (形如 <sys/types.h>)
+  - Regex:           '^<(sys|linux|arpa|netinet)/.*>$'
+    Priority:        2
+  # 3. 其他所有第三方库
+  - Regex:           '^<.*>$'
+    Priority:        3
+  # 4. 项目核心配置文件
+  - Regex:           '^"config\.h"$'
+    Priority:        4
+  # 5. 其他项目内部头文件
+  - Regex:           '^".*"'
+    Priority:        5

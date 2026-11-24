@@ -1,0 +1,27 @@
+# =============================================================================
+# clangd 服务端配置（补全、诊断、内联提示等）
+# 修改后执行命令面板「clangd: Restart」或重载窗口使配置生效
+# 文档：https://clangd.llvm.org/config
+# =============================================================================
+
+# ---------------------------------------------------------------------------
+# 内联提示（Inlay Hints）
+# 总开关由 VS Code 设置 editor.inlayHints.enabled 控制
+# 此处配置 clangd 提供哪些类型的提示
+# ---------------------------------------------------------------------------
+InlayHints:
+  # 是否向编辑器提供内联提示（与 editor.inlayHints.enabled 配合）
+  Enabled: Yes
+  # 函数调用处显示形参名称，如 foo(bar: 1, baz: 2)
+  ParameterNames: Yes
+  # 关闭推导类型提示（C 项目无 auto，保持界面简洁）
+  DeducedTypes: No
+
+CompileFlags:
+  Remove:
+    - -ID:/Keil_v5/ARM/ARMCLANG/include
+  Add:
+    - --target=arm-none-eabi
+    - -mcpu=cortex-m4
+    - -mfloat-abi=hard
+    - -mfpu=fpv4-sp-d16
